@@ -1,6 +1,6 @@
 version: 2.1
 orbs:
-  win: circleci/windows@2.2.0
+  win: circleci/windows@4.1.1
 
 jobs:
   build_windows:
@@ -45,7 +45,7 @@ jobs:
             else
             {
               echo "Cmake not present. Installing cmake."
-              choco install cmake.portable -y --version 3.16.2
+              choco install cmake.portable -y
 
               if (-not ($machinePath.ToLower().Contains($cmakePath.ToLower())))
               {
@@ -68,8 +68,19 @@ jobs:
           keys:
             - source-{{ arch }}-{{ .Branch }}-{{ .Revision }}
             - source-{{ arch }}-{{ .Branch }}-
-            - source-{{ arch }}
+            - source-{{ arch }}-
+      - run:
+          name: restore repo
+          command: |
+            if (Test-Path -Path ".git" ) {
+              git restore .
+            }
       - checkout
+      - run:
+          name: init submodules
+          command: |
+            git submodule sync
+            git submodule update --init --recursive
       - run:
           name: git gc
           command: |
@@ -98,24 +109,39 @@ jobs:
           command: |
             cmake --build build --target RUN_TESTS
   build_linux:
-    docker:
-      - image: ubuntu:20.04
+    #docker:
+    #  - image: ubuntu:20.04
+    #resource_class: xlarge
+    machine:
+      image: ubuntu-2004:202107-02 # recommended linux image
+    resource_class: large
     steps:
       - run: 
           name: Install Dependencies
           command: |
-             apt update 
-             apt install -y curl clang cmake ninja-build git uuid-dev libx11-dev libx11-xcb-dev libgl1-mesa-dev libnss3-dev libxss-dev libatk1.0-dev libatk-bridge2.0-dev libglib2.0-dev libpango1.0-dev libxi-dev libfontconfig1-dev libnspr4-dev libxcomposite-dev libxcursor-dev libxrender-dev libxtst-dev libxrandr-dev libgio2.0-cil-dev libdbus-1-dev libasound2-dev libcups2-dev libncurses5-dev
-             curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash
-             apt install -y git-lfs
+             sudo apt update 
+             sudo apt install -y curl clang cmake ninja-build git uuid-dev libx11-dev libx11-xcb-dev libgl1-mesa-dev libnss3-dev libxss-dev libatk1.0-dev libatk-bridge2.0-dev libglib2.0-dev libpango1.0-dev libxi-dev libfontconfig1-dev libnspr4-dev libxcomposite-dev libxcursor-dev libxrender-dev libxtst-dev libxrandr-dev libgio2.0-cil-dev libdbus-1-dev libasound2-dev libcups2-dev libncurses5-dev
+             curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
+             sudo apt install -y git-lfs
           environment:
              DEBIAN_FRONTEND: noninteractive
       - restore_cache:
           keys:
             - source-{{ arch }}-{{ .Branch }}-{{ .Revision }}
             - source-{{ arch }}-{{ .Branch }}-
-            - source-{{ arch }}
+            - source-{{ arch }}-
+      - run:
+          name: restore repo
+          command: |
+            if [ -d ".git" ]; then
+              git restore .
+            fi
       - checkout
+      - run:
+          name: init submodules
+          command: |
+            git submodule sync
+            git submodule update --init --recursive
       - run:
           name: git gc
           command: |
@@ -125,7 +151,7 @@ jobs:
           paths:
             - ".git"
       - run:
-          name: Build
+          name: "Build Dependencies"
           command: |
              ./scripts/build_imgui.sh
              ./scripts/build_crossguid.sh
@@ -134,6 +160,9 @@ jobs:
              ./scripts/build_cef.sh
              ./scripts/build_glslangValidator.sh
              ./scripts/build_spirvcross.sh
+      - run:
+          name: "Build Engine"
+          command: |
              ./scripts/build-ninja.sh
       - run:
           name: Test
@@ -141,14 +170,25 @@ jobs:
              cmake --build ./build --target test
   build_macos:
     macos:
-      xcode: "11.4.1"
+      xcode: "13.3.1"
     steps:
       - restore_cache:
           keys:
             - source-{{ arch }}-{{ .Branch }}-{{ .Revision }}
             - source-{{ arch }}-{{ .Branch }}-
-            - source-{{ arch }}
+            - source-{{ arch }}-
+      - run:
+          name: restore repo
+          command: |
+            if [ -d ".git" ]; then
+              git restore .
+            fi
       - checkout
+      - run:
+          name: init submodules
+          command: |
+            git submodule sync
+            git submodule update --init --recursive
       - run:
           name: git gc
           command: |
@@ -160,13 +200,13 @@ jobs:
       - run: 
           name: Install Dependencies via MacPorts
           command: |
-             curl -L -o $(pwd)/MacPorts-2.6.2-10.15-Catalina.pkg https://distfiles.macports.org/MacPorts/MacPorts-2.6.2-10.15-Catalina.pkg
-             sudo installer -package $(pwd)/MacPorts-2.6.2-10.15-Catalina.pkg -target /
-             rm $(pwd)/MacPorts-2.6.2-10.15-Catalina.pkg
+             curl -L -o $(pwd)/MacPorts-2.7.2-12-Monterey.pkg https://github.com/macports/macports-base/releases/download/v2.7.2/MacPorts-2.7.2-12-Monterey.pkg
+             sudo installer -package $(pwd)/MacPorts-2.7.2-12-Monterey.pkg -target /
+             rm $(pwd)/MacPorts-2.7.2-12-Monterey.pkg
              export PATH=/opt/local/bin:/opt/local/sbin:$PATH 
              sudo -E port -q install cmake ninja
       - run:
-          name: Build
+          name: "Build Dependencies"
           command: |
              export PATH=/opt/local/bin:/opt/local/sbin:$PATH 
              ./scripts/build_imgui.sh
@@ -175,6 +215,10 @@ jobs:
              ./scripts/build_zlib.sh
              ./scripts/build_bullet.sh
              ./scripts/build_cef.sh
+      - run:
+          name: "Build Engine"
+          command: |
+             export PATH=/opt/local/bin:/opt/local/sbin:$PATH 
              ./scripts/build-ninja.sh
       - run:
           name: Test
@@ -197,8 +241,19 @@ jobs:
           keys:
             - source-android-{{ .Branch }}-{{ .Revision }}
             - source-android-{{ .Branch }}-
-            - source-android
+            - source-android-
+      - run:
+          name: restore repo
+          command: |
+            if [ -d ".git" ]; then
+              git restore .
+            fi
       - checkout
+      - run:
+          name: init submodules
+          command: |
+            git submodule sync
+            git submodule update --init --recursive
       - run: 
           name: Git LFS Checkout
           command: |
